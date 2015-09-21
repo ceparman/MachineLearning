@@ -1,0 +1,8 @@
+---
+title: "READAME"
+author: "Craig Parman"
+date: "Monday, September 21, 2015"
+output: html_document
+---
+
+This is my project for the Machine Learning Class
