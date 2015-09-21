@@ -1,0 +1,201 @@
+---
+title: "Human Activity Recognition"
+author: "Craig Parman"
+date: "Sunday, September 20, 2015"
+output: html_document
+---
+
+
+#Executive Summary
+##Introduction
+
+The goal of the project it to be able to predict proper barbel lifting technique based on accelerometers data.  Participant provided data for correctly performed lifts and for 5 incorrect ways.  We will use machine learning to create a model that identifies the technique used (classe variable) using acceleraometer data.  The data was downloaded from the Groupware@LES website.  The details of the project can be found in following paper.
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+##Results
+
+We were able to create a random forest model that was able to predict 100% of the training data.  This model was applied to to the out of sample data and we accurate with nearly the same result.  This model should be able to predict proper results for new data with over 90% accuracy.
+
+
+#Download the data
+
+The section will download the files from the URLS provided for the project.
+
+
+The training data: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+```{r cache = TRUE, eval=FALSE}
+
+#source URLs
+trainURL<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+#only download if the files do not exist
+
+if(!file.exists( "pml-training.csv")) download.file(trainURL, "pml-training.csv", method="curl")
+
+if(!file.exists( "pml-testing.csv")) download.file(testURL, "pml-testing.csv", method="curl")
+```
+  
+  
+#Data Loading and Inspections
+
+The data will be red from the .csv file and loaded into data frames for visual inspection. All missing values and "NA" values will be converted to NAs.
+
+```{r cache=TRUE}
+
+training <- read.csv("pml-training.csv",na.strings=c("NA",""))
+
+testing <-read.csv("pml-testing.csv",na.strings=c("NA",""))
+
+dim(training)
+
+#Inspect the number and distribution of the classe variable
+
+table((training$classe))
+
+```
+  
+#Data Exploration and Cleaning   
+  
+Visual inspection of data shows a large number of NA that seem to be in a large number of low information columns.  We will remove all columns with greater than 25% NA values.
+  
+  
+  
+```{r cache= TRUE}  
+#Visual inspection shows a large numer of NA values confirmed with
+
+training <- read.csv("pml-training.csv",na.strings=c("NA",""))
+
+sum(is.na(training)) / (dim(training)[1] * dim(training)[2])
+
+  
+#Over 60% of the data is NA so we will remove columns that have greater than 25% NAa.
+
+columnPercentNA <- colSums(is.na(training)) / nrow(training)
+
+table(columnPercentNA > .25 )
+
+cleaned_training<-training[,!(columnPercentNA > .25)]
+  
+#We will also remove the first 6 columns that do not contain the accelerometers data or the classe variable.
+
+cleaned_training<-cleaned_training[,-(1:7)]
+
+#Save the cleaned training set and create a cleaned testing set.
+
+save(cleaned_training,file = "cleanedTraining")
+
+
+testing <- read.csv("pml-testing.csv",na.strings=c("NA",""))
+cleaned_testing <- testing[,!(columnPercentNA > .25)]
+
+cleaned_testing <- cleaned_testing[,-(1:7)]
+
+save(cleaned_testing,file = "cleanedTesting")
+```
+
+The result of the data cleaning is a 53 column data set included the classe (testing) and problem_id (testing) variables,
+
+
+#Data Modeling
+
+The approach will be to partition the data in to training and test sets with 70% for the data going into the training set.  We will then build a random forest model using the caret package.
+
+
+```{r cache = TRUE , eval=FALSE }
+
+library(caret)
+library(dplyr)
+
+load("cleanedTraining")
+set.seed(1)
+inTrain <- createDataPartition(y=cleaned_training$classe, p=0.70, list=FALSE)
+training <- cleaned_training[inTrain,]
+testing <- cleaned_training[-inTrain,]
+
+save(testing,file="testing")
+save(training,file="training")
+
+dim(training)
+
+#train only run once due to long run times
+
+modFit <- train(classe ~ ., data = training, method = "rf",prox=TRUE,
+             trControl = trainControl(method = "cv", number = 4, allowParallel = TRUE))
+
+save(modFit,file="modFit")
+
+
+```
+#In Sample Accuracy 
+
+To test the model we will run check the accuracy of the model against the in sample data with the confusionMatrix function.  We see a 100% accuracy.  this might suggest we have over fit the data but we will look at the out of sample results to see if we need a new model.
+
+```{r cache = TRUE}
+load("modFit")
+load("training")
+training_pred <- predict(modFit, training)
+confusionMatrix(training_pred, training$classe)
+```
+
+#Out of Sample Accuracy
+
+To estimate the accuracy of our model we will apply the model to the out of sample data.  Below are the results. We see an average accuracy very near 100% with good results for all classes.  This model appears to be a good model for this data. We would expect this model to have a better than 90% accuracy on new data. 
+
+```{r cahce=TRUE}
+library(caret)
+load("modFit")
+load("testing")
+testing_pred <- predict(modFit, testing)
+confusionMatrix(testing_pred, testing$classe)
+
+```
+
+#Appendix 1 Data Charactoristics
+
+Here we look at the number of unique values for each column of the final training and test sets. We want to confirm that the columns in the cleaned data contain sufficient information.
+
+```{r cache=TRUE}
+library(plyr)
+load("testing")
+load("training")
+#Look at the number of distinct values for each column
+colwise(n_distinct)(training)
+colwise(n_distinct)(testing)
+```
+
+#Appendix Predictions
+We use the code provided to make prediction for the final set and write them to files for submission.
+
+```{r cache= TRUE}
+library(caret)
+
+load("modFit")
+load("cleanedTesting")
+pred <- predict(modFit, cleaned_testing)
+pred <- as.character(pred)
+pred
+
+pml_write_files = function(x) {
+    n = length(x)
+    for (i in 1:n) {
+        filename = paste0("problem_id_", i, ".txt")
+        write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, 
+            col.names = FALSE)
+    }
+}
+
+pml_write_files(pred)
+
+
+
+
+```
